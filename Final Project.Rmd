@@ -1,0 +1,1271 @@
+---
+title: "Mainstream News Media on Twitter: Contents and more"
+author: "Jiazhi Yang & Liqi Hu"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: yes
+    df_print: kable
+  html_document:
+    toc: yes
+    df_print: paged
+subtitle: "SURVMETH 727 Final Project"
+references:
+- id: Wickham2014
+  title: Tidy Data
+  author:
+  - family: Wickham
+    given: Hadley
+  container-title: Journal of Statistical Software
+  volume: 59
+  issue: 10
+  page: 1-23
+  type: article-journal
+  issued:
+    year: 2014
+- id: Baumer2017
+  title: Modern Data Science with R
+  author:
+  - family: Baumer
+    given: Benjamin S.
+  - family: Kaplan
+    given: Daniel T.
+  - family: Horton
+    given: Nicholas J.
+  type: book
+  publisher: Chapman \& Hall/CRC Press.
+  issued:
+    year: 2017
+- id: AllSides
+  title: AllSides Media Bias Chart
+  url: https://www.allsides.com/
+  type: website
+  retrieved:
+    year: 2021
+---
+
+```{r, include = FALSE}
+library(knitr)
+library(tidyverse)
+library(rtweet)
+library(textdata)
+library(syuzhet)
+library(RCurl)
+library(tidytext)
+library(gridExtra)
+```
+
+## Introduction
+
+  With the development of the Internet and the digital era, people are getting more used to fragmented information. Twitter, due to its 140 characters limitation, gradually becomes the main platform for many people to access news information since they can browse summarized highlights and trends over the world quickly instead of reading detailed news articles. As we all know, every mainstream news media has its standpoint and political perspective. For the same news piece, different mainstream news media would present it differently, from headlines to contents. Is there any pattern for news media that have a similar political perspective to present their news on Twitter? As a result, we think it is an interesting topic to study. We decide to find the similarities and differences among these mainstream news media based on their tweets on Twitter and some Twitter characteristics. The whole project could be viewed on (https://github.com/sabersr/SURVMETH-727-Final-Project/).
+
+### How mainstream news media use Twitter
+
+  For most mainstream news media, Twitter is the platform for them to present the headline and short summary for news. They would provide their website link for the detailed news for those who are interested. Some would choose to use the reply function to create the chain for the whole event due to the word limitation. As official accounts, they tend not to show the subjective side from people who have the control for the account. These accounts almost never reply to other accounts to show personality and the number of tweets they like is much smaller than the number of tweets they send every day. 
+
+
+### About media bias
+
+  For this study, we will determine the political perspective of every mainstream news media based on AllSides Media Bias Chart™ [@AllSides], an American company that assesses political bias of prominent media outlets in a mission to show readers news outside of their filter bubble. We use the most recent version (5.1) here in 2021 (https://github.com/sabersr/SURVMETH-727-Final-Project/blob/main/AllSidesMediaBiasChart-Version5.1.jpg). The chart divides these new media into five categories: left, lean left, center, lean right and right. The following news media selection and analysis would follow the partition of the chart.
+
+## Data
+
+  Our data source is solely from Twitter. We use `rtweet` package to retrieve tweets and we use `get_timelines()` to get most recent 1000 tweets from the accounts of 25 mainstream news media. We choose 5 news media from each political perspective category based on the chart, consisting the total number of 25. The selected news media and their political perspectives are presented below.
+```{r echo=FALSE}
+table <- tribble(
+  ~"Political bias", ~"Selected mainstream news media",
+  "Left", "CNN, HuffPost, MSNBC, The New Yorker, Vox",
+  "Lean left", "The Economist, The Guardian, The Washington Post, USA Today, The Atlantic",
+  "Center", "AP, BBC, NPR, Reuters, The Hill",
+  "Lean right", "Deseret News, New York Post, The Washington TimesNewsmax, Washington Examiner",
+  "Right", "Daily Mail, Fox News, The Federalist, OAN (One America News), The Daily Caller"
+)
+knitr::kable(table)
+```
+
+  In order to have a proper analysis, the data gathering process ends at the beginning of December 16th, 2021, Coordinated Universal Time (UTC), and the code is presented below. 
+```{r eval=FALSE}
+# Data gathering process
+# Status #1471268839686127618 is the post tweeted by the Fox News at 12 AM UTC 
+# on December 16th, 2021. We use it to keep tweets having an ID less than it to
+# limit the time range.
+
+# The order of the account name is the same as the present order for the table 
+# above, for further reference.
+
+tmls <- get_timelines(c("cnn", "HuffPost", "msnbc", "NewYorker", "voxdotcom", 
+                        "theeconomist", "guardian", "washingtonpost", "usatoday", 
+                        "theatlantic", "ap", "bbcworld", "npr", "reuters", 
+                        "thehill", "deseret", "nypost", "washtimes", "newsmax", 
+                        "dcexaminer", "mailonline", "foxnews", "FDRLST", "oann", 
+                        "DailyCaller"), 
+                      n = 1000, 
+                      max_id = 1471268839686127618)
+```
+
+```{r eval=FALSE, include=FALSE}
+# Since `get_timelines()` can only get the most recent 3200 tweets and many accounts have lots of tweets everyday, we feel that it is better to save the data first to avoid the incomplete data latter.
+tmls <- get_timelines(c("cnn", "HuffPost", "msnbc", "NewYorker", "voxdotcom", "theeconomist", "guardian", "washingtonpost", "usatoday", "theatlantic", "ap", "bbcworld", "npr", "reuters", "thehill", "deseret", "nypost", "washtimes", "newsmax", "dcexaminer", "mailonline", "foxnews", "FDRLST", "oann", "DailyCaller"), n = 1000, max_id = 1471268839686127618)
+save(tmls, file = "tmls.RData")
+load(url("https://github.com/sabersr/SURVMETH-727-Final-Project/blob/main/tmls.RData?raw=true"))
+
+# At the same time, the tweet the function retrieves also includes some account information, and we choose to get the most recent tweet before 12 AM UTC on December 16th, 2021 because the proper function to get user data `lookup_users()` cannot limit the time range. We feel like it is hard to properly explain this issue in our report, so we do not show the code to get the number of followers here.
+user_df <- get_timelines(c("cnn", "HuffPost", "msnbc", "NewYorker", "voxdotcom", "theeconomist", "guardian", "washingtonpost", "usatoday", "theatlantic", "ap", "bbcworld", "npr", "reuters", "thehill", "deseret", "nypost", "washtimes", "newsmax", "dcexaminer", "mailonline", "foxnews", "FDRLST", "oann", "DailyCaller"), n = 1, max_id = 1471268839686127618)
+save(user_df, file = "user_df.RData")
+load(url("https://github.com/sabersr/SURVMETH-727-Final-Project/blob/main/user_df.RData?raw=true"))
+user_df$followers_count
+
+```
+
+## Results
+
+### Data exploration
+
+  We first examine the number of followers of every mainstream news media's Twitter account. The result is presented below.
+
+```{r echo=FALSE, fig.align = 'center'}
+# What happens here depends on the specific project
+load(url("https://github.com/sabersr/SURVMETH-727-Final-Project/blob/main/user_df.RData?raw=true"))
+
+user_df$political_perspective <- ""
+user_df[1:5,]$political_perspective <- "Left"
+user_df[6:10,]$political_perspective <- "Lean left"
+user_df[11:15,]$political_perspective <- "Center"
+user_df[16:20,]$political_perspective <- "Lean right"
+user_df[21:25,]$political_perspective <- "Right"
+
+user_df$political_perspective <- as.factor(user_df$political_perspective)
+user_df %>%
+  select("screen_name", "followers_count", "political_perspective") %>%
+  group_by(political_perspective) %>%
+  ggplot() +
+    geom_bar(mapping = aes(x = screen_name, y = followers_count), stat = "identity") +
+    facet_wrap(~ factor(political_perspective), scales = "free_x", ncol = 5) +
+    labs(title = "The number of followers of Mainsream news media's Twitter account",
+         subtitle = "Categorized by political perspective",
+         y = "Number of followers", x = "News account") + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+  From the graph, we could see that in general, left and center political perspective news media tend to have larger audience than right based on the number of followers. It is interesting that only Fox News has a relatively large number of followers, which is in the accordance with people's stereotype that conservative people receive news from Fox News most often. In other words, Twitter seems to be a more liberal space for people.
+  
+  We want to further explore other Twitter characteristics such as the number of retweets and likes. However, we feel it is hard to have a clear reasoning for these features. It is often the case that people do not think retweet is a kind of endorsement and they have their different attitudes towards how they would use retweet and like. As a result, it is not very promising to study these data because they cannot reflect much valuable information and the popularity of the news media account. The direct number that could show the popularity is the number of how many people view this tweet, but it is difficult to measure.
+  
+
+### Analysis
+
+  For the tweets of news' headlines and summary, we decide to do sentiment analysis to study affective states and subjective information of mainstream news media with different political perspective. We employ several packages including `tidytext`, `textdata`, `ggplot2`, and `syuzhet` for data cleaning, sentiment tests, and data visualization.
+
+```{r, include = FALSE}
+# Tweets analysis preparation
+load(url("https://github.com/sabersr/SURVMETH-727-Final-Project/blob/main/tmls.RData?raw=true"))
+
+tmls_small <- tmls %>%
+  select(user_id:display_text_width, favorite_count:retweet_count)
+
+# Set political perspective
+tmls_small$spectrum <- "values"
+tmls_small$spectrum[1:5000] <- "Left"
+tmls_small$spectrum[5001:10000] <- "Lean Left"
+tmls_small$spectrum[10001:15000] <- "Center"
+tmls_small$spectrum[15001:20000] <- "Lean Right"
+tmls_small$spectrum[20001:25000] <- "Right"
+
+# Strip the link and shorten link of detailed news article and tokenize tweets
+tmls_small$stripped <- gsub("https","",tmls_small$text)
+tmls_small$stripped <- gsub("t.co","",tmls_small$stripped)
+tmls_small$stripped <- gsub("OANN","",tmls_small$stripped)
+tmls_tokenized <- tmls_small %>%
+  unnest_tokens(word, stripped)
+
+# Make stop words and remove them from tweets
+my_stop_words <- stop_words %>%
+  filter(lexicon == "snowball")
+tmls_tokenized_clean <- tmls_tokenized %>%
+  anti_join(my_stop_words)
+```
+
+#### Common unique words
+
+
+  At first, we want to see the common words that media accounts frequently use. The graphs below are the top 10 common unique words in each media accounts.
+```{r echo=FALSE, fig.align = 'center', fig.height = 5, fig.width = 20, message=FALSE}
+# Common Words
+plot1 <- tmls_tokenized_clean %>%
+  filter(screen_name == "CNN") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in CNN tweets")
+
+plot2 <- tmls_tokenized_clean %>%
+  filter(screen_name == "HuffPost") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in HuffPost tweets")
+
+plot3 <- tmls_tokenized_clean %>%
+  filter(screen_name == "MSNBC") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in MSNBC tweets")
+
+plot4 <- tmls_tokenized_clean %>%
+  filter(screen_name == "NewYorker") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in NewYorker tweets")
+
+plot5 <- tmls_tokenized_clean %>%
+  filter(screen_name == "voxdotcom") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in voxdotcom tweets")
+
+grid.arrange(plot1, plot2, plot3, plot4, plot5, ncol=5)
+```
+  
+  For Left media, some common unique words include "trump" and "covid". This is corresponding to the newest news about COVID-19 and 2021 United States Capitol Attack.
+
+``` {r echo=FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+grid.arrange(tmls_tokenized_clean %>%
+  filter(screen_name == "TheEconomist") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in TheEconomist tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "guardian") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in guardian tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "washingtonpost") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in washingtonpost tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "USATODAY") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in USATODAY tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "TheAtlantic") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in TheAtlantic tweets"), ncol = 5)
+```
+  
+  The result of Lean Left media is more diverse. There is no clear common unique words. Washington Post is the only media in Left and Lean left having current US president in the top 10 word.
+
+``` {r echo=FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+grid.arrange(tmls_tokenized_clean %>%
+  filter(screen_name == "AP") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in AP tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "BBCWorld") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in BBCWorld tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "NPR") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in NPR tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "Reuters") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in Reuters tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "thehill") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in thehill tweets"), ncol = 5)
+```
+  
+  Center media seem to have fewer politics-related words. Only The Hill has political words such as "biden" or "trump". Other accounts focus more on COVID-related news.
+
+``` {r echo=FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+grid.arrange(tmls_tokenized_clean %>%
+  filter(screen_name == "Deseret") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in Deseret tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "nypost") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in nypost tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "WashTimes") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in WashTimes tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "newsmax") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in newsmax tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "dcexaminer") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in dcexaminer tweets"), ncol=5)
+```
+  
+  Lean Right media is focusing more politics than categories above. Three of them have "biden" in their top 10 words, along with other politics-related words such as "president", "democrats", or "house" that are common in this list.
+
+
+``` {r echo=FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+grid.arrange(tmls_tokenized_clean %>%
+  filter(screen_name == "MailOnline") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in MailOnline tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "FoxNews") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in FoxNews tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "FDRLST") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in FDRLST tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "OANN") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in OANN tweets"),
+
+tmls_tokenized_clean %>%
+  filter(screen_name == "DailyCaller") %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  mutate(word = reorder(word,n)) %>%
+  ggplot(aes(x=word, y=n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  theme_classic() +
+  labs(x="count",
+       y="Unique words",
+       title="Top 10 words in DailyCaller tweets"), ncol = 5)
+```
+  
+  Similar to Lean Right, Right media also show high rate of politics-related words appearance. Four of them has "biden" in the list. It is also interesting to note that in the ranking of Fox News, the word "cnn" is also on the list, marking the 9th most common words for this account. This is the only case among all samples seeing the name of another news media appearing in the top words ranking.
+
+  From the data above, some patterns might be found, while are not very clear. For the most common words, there is only a few specific unique characteristics for each political spectrum. One interesting finding is that, among all left and lean left media, only one of the ten shows "biden" in the most common words (Washington Post). Only one of the five center media shows "biden" (the hill). On the other hand, there are totally 7 out of 10 right or lean right media have "biden" in their top 10 most common words. 
+
+#### Bing and NRC sentiment test
+  
+  We use two sentiment test tools to get a more solid sentiment analysis result. Both sentiment test show very similar pattern. In bing sentiment test, most news media show generally more positive contributions to the overall sentiments, while the more Right the media are, the more negative they are possibly being. As for nrc sentiment test, left, lean left, and center media also show more positive sentiment score. BBC World is the only media among these three categories that has higher negative score than positive one. While among the 10 right and learn right media, there are 4 media have higher negative score pattern. Graphs below are the result of bing sentiment test and nrc sentiment test. 
+``` {r echo=FALSE, fig.align = 'center',  fig.show="hold", out.width="50%", message=FALSE}
+# bing test
+bing_cnn <- tmls_tokenized_clean %>%
+  filter(screen_name == "CNN") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_cnn %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "CNN Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_HuffPost <- tmls_tokenized_clean %>%
+  filter(screen_name == "HuffPost") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_HuffPost %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "HuffPost Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_MSNBC <- tmls_tokenized_clean %>%
+  filter(screen_name == "MSNBC") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_MSNBC %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "MSNBC Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_NewYorker <- tmls_tokenized_clean %>%
+  filter(screen_name == "NewYorker") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_NewYorker %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "NewYorker Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_voxdotcom <- tmls_tokenized_clean %>%
+  filter(screen_name == "voxdotcom") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_voxdotcom %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "voxdotcom Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+```
+  
+  For Left media, they generally show more positive words contributing to the whole sentiment. 
+
+```{r echo=FALSE, fig.align = 'center',  fig.show="hold", out.width="50%", message=FALSE}
+bing_TheEconomist <- tmls_tokenized_clean %>%
+  filter(screen_name == "TheEconomist") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_TheEconomist %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "TheEconomist Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_guardian <- tmls_tokenized_clean %>%
+  filter(screen_name == "guardian") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_guardian %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "guardian Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_washingtonpost <- tmls_tokenized_clean %>%
+  filter(screen_name == "washingtonpost") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_washingtonpost %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "washingtonpost Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_USATODAY <- tmls_tokenized_clean %>%
+  filter(screen_name == "USATODAY") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_USATODAY %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "USATODAY Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_TheAtlantic <- tmls_tokenized_clean %>%
+  filter(screen_name == "TheAtlantic") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_TheAtlantic %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "TheAtlantic Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+```
+  
+  Lean Left media has similar pattern to the Left media. It is noteworthy that USA TODAY has smaller difference between negative and positive categories. 
+
+``` {r echo=FALSE, fig.align = 'center',  fig.show="hold", out.width="50%", message=FALSE}
+bing_AP <- tmls_tokenized_clean %>%
+  filter(screen_name == "AP") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_AP %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "AP Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_BBCWorld <- tmls_tokenized_clean %>%
+  filter(screen_name == "BBCWorld") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_BBCWorld %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "BBCWorld Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_NPR <- tmls_tokenized_clean %>%
+  filter(screen_name == "NPR") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_NPR %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "NPR Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_Reuters <- tmls_tokenized_clean %>%
+  filter(screen_name == "Reuters") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_Reuters %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "Reuters Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_thehill <- tmls_tokenized_clean %>%
+  filter(screen_name == "thehill") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_thehill %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "thehill Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+```
+  
+  Center media seems to have more balanced pattern between negative and positive words. Only The Hill has the very clear gap between them, and this is largely due to mistake brought by "trump", which will be discussed later.
+
+``` {r echo=FALSE, fig.align = 'center',  fig.show="hold", out.width="50%", message=FALSE}
+bing_Deseret <- tmls_tokenized_clean %>%
+  filter(screen_name == "Deseret") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_Deseret %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "Deseret Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_nypost <- tmls_tokenized_clean %>%
+  filter(screen_name == "nypost") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_nypost %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "nypost Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_WashTimes <- tmls_tokenized_clean %>%
+  filter(screen_name == "WashTimes") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_WashTimes %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "WashTimes Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_newsmax <- tmls_tokenized_clean %>%
+  filter(screen_name == "newsmax") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_newsmax %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "newsmax Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_dcexaminer <- tmls_tokenized_clean %>%
+  filter(screen_name == "dcexaminer") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_dcexaminer %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "dcexaminer Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+```
+  
+  Although most Lean Right media has the same more positive pattern, some differences are also found in this category. NY POST shows more negative sentiments than positive. Other media, such as newsmax and Washington Post, have smaller gap between negative and positive sentiment after excluding the word "trump".
+
+``` {r echo=FALSE, fig.align = 'center',  fig.show="hold", out.width="50%", message=FALSE}
+bing_MailOnline <- tmls_tokenized_clean %>%
+  filter(screen_name == "MailOnline") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_MailOnline %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "MailOnline Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_FoxNews <- tmls_tokenized_clean %>%
+  filter(screen_name == "FoxNews") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_FoxNews %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "FoxNews Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_FDRLST <- tmls_tokenized_clean %>%
+  filter(screen_name == "FDRLST") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_FDRLST %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "FDRLST Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_OANN <- tmls_tokenized_clean %>%
+  filter(screen_name == "OANN") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_OANN %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "OANN Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+
+bing_DailyCaller <- tmls_tokenized_clean %>%
+  filter(screen_name == "DailyCaller") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_DailyCaller %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate (word = reorder(word,n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scale = "free_y") +
+  labs(title = "DailyCaller Tweets",
+       x = NULL,
+       y = "contribution to sentiment") +
+  coord_flip() + theme_bw()
+```
+  
+  The new pattern found in Lean Right media is more obvious in Right media. All of these media have either more nagative sentiment or comparatively smaller gap between these two. 
+  
+``` {r echo=FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+# nrc test
+cnn_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "CNN"])
+barplot(colSums(cnn_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for CNN Tweets")
+
+HuffPost_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "HuffPost"])
+barplot(colSums(HuffPost_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for HuffPost Tweets")
+
+MSNBC_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "MSNBC"])
+barplot(colSums(MSNBC_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for MSNBC Tweets")
+
+NewYorker_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "NewYorker"])
+barplot(colSums(NewYorker_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for NewYorker Tweets")
+
+voxdotcom_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "voxdotcom"])
+barplot(colSums(voxdotcom_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for voxdotcom Tweets")
+```
+  
+  All Left media have the similar sentiment test result of being more positive. MSNBC is slight different due to more words of sadness than joy.
+
+``` {r echo = FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+TheEconomist_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "TheEconomist"])
+barplot(colSums(TheEconomist_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for TheEconomist Tweets")
+
+guardian_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "guardian"])
+barplot(colSums(guardian_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for guardian Tweets")
+
+washingtonpost_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "washingtonpost"])
+barplot(colSums(washingtonpost_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for washingtonpost Tweets")
+
+USATODAY_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "USATODAY"])
+barplot(colSums(USATODAY_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for USATODAY Tweets")
+
+TheAtlantic_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "TheAtlantic"])
+barplot(colSums(TheAtlantic_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for TheAtlantic Tweets")
+```
+  
+  Lean Left media also have generally more positive sentiment. But words of sadness are more than words of joy for all accounts in this categories. The gap between negative and positive is also smaller for some accounts like Guardian and Washington Post.
+
+``` {r echo = FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+AP_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "AP"])
+barplot(colSums(AP_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for AP Tweets")
+
+BBCWorld_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "BBCWorld"])
+barplot(colSums(BBCWorld_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for BBCWorld Tweets")
+
+NPR_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "NPR"])
+barplot(colSums(NPR_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for NPR Tweets")
+
+Reuters_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "Reuters"])
+barplot(colSums(Reuters_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for Reuters Tweets")
+
+thehill_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "thehill"])
+barplot(colSums(thehill_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for thehill Tweets")
+```
+  
+  Center media basically share the same characteristics as the Lean Left media. However, BBC World is the only account with higher negative sentiment than positive.
+
+``` {r echo = FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+Deseret_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "Deseret"])
+barplot(colSums(Deseret_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for Deseret Tweets")
+
+nypost_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "nypost"])
+barplot(colSums(nypost_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for nypost Tweets")
+
+WashTimes_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "WashTimes"])
+barplot(colSums(WashTimes_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for WashTimes Tweets")
+
+newsmax_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "newsmax"])
+barplot(colSums(newsmax_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for newsmax Tweets")
+
+dcexaminer_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "dcexaminer"])
+barplot(colSums(dcexaminer_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for dcexaminer Tweets")
+```
+  
+  The pattern of Lean Right is still similar to the Center media. NY Post is the only one with higher negative than positive. 
+
+``` {r echo = FALSE, fig.align = 'center',  fig.height = 5, fig.width = 20, message=FALSE}
+MailOnline_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "MailOnline"])
+barplot(colSums(MailOnline_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for MailOnline Tweets")
+
+FoxNews_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "FoxNews"])
+barplot(colSums(FoxNews_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for FoxNews Tweets")
+
+FDRLST_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "FDRLST"])
+barplot(colSums(FDRLST_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for FDRLST Tweets")
+
+OANN_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "OANN"])
+barplot(colSums(OANN_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for OANN Tweets")
+
+DailyCaller_score <- get_nrc_sentiment(tmls_small$text[tmls_small$screen_name == "DailyCaller"])
+barplot(colSums(DailyCaller_score),
+        las = 2,
+        col = rainbow(10),
+        ylab = "count",
+        main = "Sentiment Score for DailyCaller Tweets")
+```
+  
+  For Right media, 3 of 5 accounts show more negative sentiment to positive. Only OANN has dramatically more positive, while DailyCaller only has small gap between. 
+
+
+## Discussion and Conclusion
+
+  This study is trying to find whether news platform accounts on twitter have unique characteristics based on their position in political spectrum. The result show that there are some patterns among accounts sharing the same political attitudes. In general, Left and Right media seems to focus more on politics-related information. As for sentiment test, both methods show Left to be more positive than Right media. This is probably similar to the public stereotype of liberal being more positive to current social and political trends. 
+
+  The limitations of this study are various, mostly are from the data we collected and tool we used. Since Rtweet package only allow us to collect the most recent 3200 tweets and no way to specify the time period, it is possible that the difference between data we collect for each media account are due to this slight time difference. Moreover, in the bing test result, we find the word "trump" is marked as a positive word. Here the lexicon might treat trump as its original meaning of beating someone by doing something better, but in the real situation this word is more likely to refer to former president Donald Trump. Since the word trump is so popular in the data, it is questionable that whether such mistake would largely influence the overall sentiment test result for each media account. 
+
+  Further study with more data samples and advanced analysis tools is needed for more precise result in this field. Twitter and other social media platforms have become a kind of most important way for people to share their opinion. For social scientist, it is also a significant way to track public opinion and popularity trend. The same topic is worthy  more deep investigation so that the relationship between media political bias and social media behavior would be more clear for future academic use. 
+
+## References
